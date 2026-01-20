@@ -6,6 +6,7 @@ import (
 	"gregperez/task-management-api/internal/domain"
 	"gregperez/task-management-api/internal/handler/request"
 	"gregperez/task-management-api/internal/service"
+	"gregperez/task-management-api/internal/service/dto"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -34,7 +35,7 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convertir request DTO a service request
-	serviceReq := service.CreateUserRequest{
+	serviceReq := dto.CreateUserRequest{
 		Username: req.Username,
 		Email:    req.Email,
 		Role:     domain.UserRole(req.Role),
@@ -83,9 +84,9 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convertir request DTO a service request
-	serviceReq := service.UpdateUserRequest{
-		Email:    req.Email,
-		Role:     domain.UserRole(req.Role),
+	serviceReq := dto.UpdateUserRequest{
+		Email: req.Email,
+		Role:  domain.UserRole(req.Role),
 	}
 
 	if err := h.userService.UpdateUser(ctx, userID, serviceReq, userRole); err != nil {

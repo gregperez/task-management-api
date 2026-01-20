@@ -6,6 +6,7 @@ import (
 	"gregperez/task-management-api/internal/domain"
 	"gregperez/task-management-api/internal/handler/request"
 	"gregperez/task-management-api/internal/service"
+	"gregperez/task-management-api/internal/service/dto"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -34,7 +35,7 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convertir request DTO a service request
-	serviceReq := service.CreateTaskRequest{
+	serviceReq := dto.CreateTaskRequest{
 		Title:       req.Title,
 		Description: req.Description,
 		DueDate:     req.DueDate,
@@ -86,7 +87,7 @@ func (h *TaskHandler) UpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convertir request DTO a service request
-	serviceReq := service.UpdateTaskRequest{
+	serviceReq := dto.UpdateTaskRequest{
 		Title:       req.Title,
 		Description: req.Description,
 		DueDate:     req.DueDate,
@@ -135,7 +136,7 @@ func (h *TaskHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convertir request DTO a service request
-	serviceReq := service.UpdateTaskStatusRequest{
+	serviceReq := dto.UpdateTaskStatusRequest{
 		Status: domain.TaskStatus(req.Status),
 	}
 

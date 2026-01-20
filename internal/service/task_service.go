@@ -2,12 +2,10 @@ package service
 
 import (
 	"context"
-	"time"
 
 	"gregperez/task-management-api/internal/domain"
 	"gregperez/task-management-api/internal/repository"
-
-	"github.com/google/uuid"
+	"gregperez/task-management-api/internal/service/dto"
 )
 
 type TaskService struct {
@@ -22,40 +20,23 @@ func NewTaskService(taskRepo repository.TaskRepository, userRepo repository.User
 	}
 }
 
-type CreateTaskRequest struct {
-	Title       string    `json:"title" validate:"required,min=3"`
-	Description string    `json:"description" validate:"required"`
-	DueDate     time.Time `json:"due_date" validate:"required"`
-	AssignedTo  string    `json:"assigned_to" validate:"required"`
-}
-
-func (s *TaskService) CreateTask(ctx context.Context, req CreateTaskRequest, creatorID string, creatorRole domain.UserRole) (*domain.Task, error) {
-	// Solo administradores pueden crear tareas
-	if creatorRole != domain.RoleAdmin {
-		return nil, domain.ErrForbidden
+// CreateTask crea una nueva tarea asignada a un ejecutor.
+// Solo los administradores pueden crear tareas.
+func (s *TaskService) CreateTask(ctx context.Context, req dto.CreateTaskRequest, creatorID string, creatorRole domain.UserRole) (*domain.Task, error) {
+	if err := canModifyTask(creatorRole); err != nil {
+		return nil, err
 	}
 
-	// Verificar que el usuario asignado existe y es ejecutor
 	assignee, err := s.userRepo.GetByID(ctx, req.AssignedTo)
 	if err != nil {
-		return nil, domain.ErrUserNotFound
+		return nil, err
 	}
 
-	if !assignee.IsExecutor() {
-		return nil, domain.ErrInvalidInput
+	if err := validateAssigneeIsExecutor(assignee); err != nil {
+		return nil, err
 	}
 
-	task := &domain.Task{
-		ID:          uuid.New().String(),
-		Title:       req.Title,
-		Description: req.Description,
-		Status:      domain.StatusAssigned,
-		DueDate:     req.DueDate,
-		AssignedTo:  req.AssignedTo,
-		CreatedBy:   creatorID,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
-	}
+	task := buildNewTask(req, creatorID)
 
 	if err := s.taskRepo.Create(ctx, task); err != nil {
 		return nil, err
@@ -64,15 +45,11 @@ func (s *TaskService) CreateTask(ctx context.Context, req CreateTaskRequest, cre
 	return task, nil
 }
 
-type UpdateTaskRequest struct {
-	Title       string    `json:"title,omitempty"`
-	Description string    `json:"description,omitempty"`
-	DueDate     time.Time `json:"due_date,omitempty"`
-}
-
-func (s *TaskService) UpdateTask(ctx context.Context, taskID string, req UpdateTaskRequest, updaterRole domain.UserRole) error {
-	if updaterRole != domain.RoleAdmin {
-		return domain.ErrForbidden
+// UpdateTask actualiza los campos de una tarea existente.
+// Solo los administradores pueden actualizar tareas y solo si están en estado "Asignado".
+func (s *TaskService) UpdateTask(ctx context.Context, taskID string, req dto.UpdateTaskRequest, updaterRole domain.UserRole) error {
+	if err := canModifyTask(updaterRole); err != nil {
+		return err
 	}
 
 	task, err := s.taskRepo.GetByID(ctx, taskID)
@@ -80,28 +57,21 @@ func (s *TaskService) UpdateTask(ctx context.Context, taskID string, req UpdateT
 		return err
 	}
 
-	// Solo se puede actualizar si está en estado "Asignado"
-	if !task.CanBeModified() {
-		return domain.ErrTaskCannotBeModified
+	if err := validateTaskModification(task); err != nil {
+		return err
 	}
 
-	if req.Title != "" {
-		task.Title = req.Title
-	}
-	if req.Description != "" {
-		task.Description = req.Description
-	}
-	if !req.DueDate.IsZero() {
-		task.DueDate = req.DueDate
-	}
+	updateTaskFields(task, req)
+	markTaskAsUpdated(task)
 
-	task.UpdatedAt = time.Now()
 	return s.taskRepo.Update(ctx, task)
 }
 
+// DeleteTask elimina una tarea existente.
+// Solo los administradores pueden eliminar tareas y solo si están en estado "Asignado".
 func (s *TaskService) DeleteTask(ctx context.Context, taskID string, deleterRole domain.UserRole) error {
-	if deleterRole != domain.RoleAdmin {
-		return domain.ErrForbidden
+	if err := canModifyTask(deleterRole); err != nil {
+		return err
 	}
 
 	task, err := s.taskRepo.GetByID(ctx, taskID)
@@ -109,50 +79,44 @@ func (s *TaskService) DeleteTask(ctx context.Context, taskID string, deleterRole
 		return err
 	}
 
-	if !task.CanBeModified() {
-		return domain.ErrTaskCannotBeModified
+	if err := validateTaskModification(task); err != nil {
+		return err
 	}
 
 	return s.taskRepo.Delete(ctx, taskID)
 }
 
-type UpdateTaskStatusRequest struct {
-	Status domain.TaskStatus `json:"status" validate:"required"`
-}
-
-func (s *TaskService) UpdateTaskStatus(ctx context.Context, taskID string, req UpdateTaskStatusRequest, userID string, userRole domain.UserRole) error {
-	if userRole != domain.RoleExecutor {
-		return domain.ErrForbidden
-	}
-
+// UpdateTaskStatus actualiza el estado de una tarea.
+// Solo los ejecutores pueden actualizar el estado de sus tareas asignadas.
+// La tarea no debe estar vencida y la transición de estado debe ser válida.
+func (s *TaskService) UpdateTaskStatus(ctx context.Context, taskID string, req dto.UpdateTaskStatusRequest, userID string, userRole domain.UserRole) error {
 	task, err := s.taskRepo.GetByID(ctx, taskID)
 	if err != nil {
 		return err
 	}
 
-	// Verificar que la tarea esté asignada al usuario
-	if task.AssignedTo != userID {
-		return domain.ErrNotAssignedToUser
+	if err := canUpdateTaskStatus(task, userID, userRole); err != nil {
+		return err
 	}
 
-	// No se puede actualizar una tarea vencida
-	if task.IsExpired() {
-		return domain.ErrTaskExpired
+	if err := validateTaskNotExpired(task); err != nil {
+		return err
 	}
 
-	// Validar transición de estado
-	if err := task.CanTransitionTo(req.Status); err != nil {
-		return domain.ErrInvalidStatusTransition
+	if err := validateStatusTransition(task, req.Status); err != nil {
+		return err
 	}
 
-	task.Status = req.Status
-	task.UpdatedAt = time.Now()
+	updateTaskStatus(task, req.Status)
+
 	return s.taskRepo.Update(ctx, task)
 }
 
+// AddComment agrega un comentario a una tarea.
+// Solo los ejecutores pueden agregar comentarios y solo a tareas vencidas.
 func (s *TaskService) AddComment(ctx context.Context, taskID string, content string, userID string, userRole domain.UserRole) error {
-	if userRole != domain.RoleExecutor {
-		return domain.ErrForbidden
+	if err := canAddComment(userRole); err != nil {
+		return err
 	}
 
 	task, err := s.taskRepo.GetByID(ctx, taskID)
@@ -160,43 +124,41 @@ func (s *TaskService) AddComment(ctx context.Context, taskID string, content str
 		return err
 	}
 
-	// Solo se pueden agregar comentarios a tareas vencidas
-	if !task.IsExpired() {
-		return domain.ErrInvalidInput
+	if err := validateCommentOnExpiredTask(task); err != nil {
+		return err
 	}
 
-	comment := &domain.Comment{
-		ID:        uuid.New().String(),
-		TaskID:    taskID,
-		UserID:    userID,
-		Content:   content,
-		CreatedAt: time.Now(),
-	}
+	comment := buildNewComment(taskID, userID, content)
 
 	return s.taskRepo.AddComment(ctx, comment)
 }
 
+// ListUserTasks retorna todas las tareas asignadas a un usuario específico.
 func (s *TaskService) ListUserTasks(ctx context.Context, userID string) ([]*domain.Task, error) {
 	return s.taskRepo.ListByAssignee(ctx, userID)
 }
 
+// ListAllTasks retorna todas las tareas del sistema.
+// Solo los auditores pueden listar todas las tareas.
 func (s *TaskService) ListAllTasks(ctx context.Context, requesterRole domain.UserRole) ([]*domain.Task, error) {
-	if requesterRole != domain.RoleAuditor {
-		return nil, domain.ErrForbidden
+	if err := requireRole(requesterRole, domain.RoleAuditor); err != nil {
+		return nil, err
 	}
 
 	return s.taskRepo.ListAll(ctx)
 }
 
+// GetTask obtiene una tarea por su ID.
+// Los ejecutores solo pueden ver tareas asignadas a ellos.
+// Los auditores y administradores pueden ver todas las tareas.
 func (s *TaskService) GetTask(ctx context.Context, taskID string, userID string, userRole domain.UserRole) (*domain.Task, error) {
 	task, err := s.taskRepo.GetByID(ctx, taskID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Ejecutores solo pueden ver sus tareas, auditores pueden ver todas
-	if userRole == domain.RoleExecutor && task.AssignedTo != userID {
-		return nil, domain.ErrForbidden
+	if err := canViewTask(task, userID, userRole); err != nil {
+		return nil, err
 	}
 
 	return task, nil
