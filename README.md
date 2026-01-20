@@ -15,53 +15,18 @@ API REST en Golang para gestión de tareas con control de estados y múltiples r
 
 ## 🏗️ Arquitectura
 
-### Capas del Sistema
+> **Documentación completa**: Ver [docs/architecture.md](docs/architecture.md) para diagramas detallados y especificaciones técnicas.
 
-```
-┌─────────────────────────────────────────────┐
-│         HTTP Handlers (Presentation)        │
-│  - auth_handler, user_handler, task_handler │
-└─────────────────┬───────────────────────────┘
-                  │
-┌─────────────────▼───────────────────────────┐
-│          Services (Business Logic)          │
-│  - auth_service, user_service, task_service │
-└─────────────────┬───────────────────────────┘
-                  │
-┌─────────────────▼───────────────────────────┐
-│      Repositories (Data Access Layer)       │
-│  - user_repository, task_repository         │
-└─────────────────┬───────────────────────────┘
-                  │
-┌─────────────────▼───────────────────────────┐
-│            PostgreSQL Database              │
-└─────────────────────────────────────────────┘
-```
+### Principios de Diseño
 
-### Flujo de Estados de Tareas
-
-```
-                    ┌──────────┐
-                    │ Asignado │ (Estado inicial)
-                    └────┬─────┘
-                         │
-                    ┌────▼─────┐
-              ┌────►│ Iniciado │◄────┐
-              │     └────┬─────┘     │
-              │          │           │
-              │     ┌────▼──────┐    │
-              │     │ En espera │────┘
-              │     └───────────┘
-              │
-         ┌────┴─────────┬──────────┐
-         │              │          │
-    ┌────▼─────┐   ┌────▼────┐    │
-    │Finalizado│   │Finalizado│    │
-    │  Éxito   │   │  Error   │    │
-    └──────────┘   └──────────┘    │
-         ▲              ▲           │
-         └──────────────┴───────────┘
-```
+- ✅ **Clean Architecture**: Separación clara de responsabilidades por capas
+- ✅ **Dependency Injection**: Inyección de dependencias en `app.go`
+- ✅ **Repository Pattern**: Abstracción de acceso a datos
+- ✅ **Service Layer**: Lógica de negocio centralizada
+- ✅ **DTO Pattern**: Separación entre modelos de dominio y API
+- ✅ **Middleware Chain**: Autenticación, logging y CORS
+- ✅ **State Machine**: Control estricto de transiciones de estado
+- ✅ **Role-Based Access Control**: Autorización por rol de usuario
 
 ## 📋 Requisitos Previos
 
