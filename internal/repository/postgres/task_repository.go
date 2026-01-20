@@ -2,9 +2,7 @@ package postgres
 
 import (
 	"context"
-	"errors"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"gregperez/task-management-api/internal/domain"
@@ -18,63 +16,54 @@ func NewTaskRepository(db *pgxpool.Pool) *TaskRepository {
 	return &TaskRepository{db: db}
 }
 
+// Create crea una nueva tarea en la base de datos
 func (r *TaskRepository) Create(ctx context.Context, task *domain.Task) error {
-	query := `
-		INSERT INTO tasks (id, title, description, status, due_date, assigned_to, created_by, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`
-
-	_, err := r.db.Exec(ctx, query,
-		task.ID, task.Title, task.Description, task.Status,
-		task.DueDate, task.AssignedTo, task.CreatedBy, task.CreatedAt, task.UpdatedAt,
+	_, err := r.db.Exec(ctx, queryInsertTask,
+		task.ID,
+		task.Title,
+		task.Description,
+		task.Status,
+		task.DueDate,
+		task.AssignedTo,
+		task.CreatedBy,
+		task.CreatedAt,
+		task.UpdatedAt,
 	)
 
-	return err
+	return mapTaskDBError(err)
 }
 
+// GetByID obtiene una tarea por su ID (incluye comentarios)
 func (r *TaskRepository) GetByID(ctx context.Context, id string) (*domain.Task, error) {
-	query := `
-		SELECT id, title, description, status, due_date, assigned_to, created_by, created_at, updated_at
-		FROM tasks
-		WHERE id = $1
-	`
-
-	var task domain.Task
-	err := r.db.QueryRow(ctx, query, id).Scan(
-		&task.ID, &task.Title, &task.Description, &task.Status,
-		&task.DueDate, &task.AssignedTo, &task.CreatedBy, &task.CreatedAt, &task.UpdatedAt,
-	)
-
+	row := r.db.QueryRow(ctx, querySelectTaskByID, id)
+	task, err := scanTask(row)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, domain.ErrTaskNotFound
-		}
 		return nil, err
 	}
 
 	// Cargar comentarios
-	comments, err := r.getCommentsByTaskID(ctx, id)
+	comments, err := loadTaskComments(ctx, r.db, task.ID)
 	if err != nil {
 		return nil, err
 	}
 	task.Comments = comments
 
-	return &task, nil
+	return task, nil
 }
 
+// Update actualiza una tarea existente
 func (r *TaskRepository) Update(ctx context.Context, task *domain.Task) error {
-	query := `
-		UPDATE tasks
-		SET title = $1, description = $2, status = $3, due_date = $4, updated_at = $5
-		WHERE id = $6
-	`
-
-	result, err := r.db.Exec(ctx, query,
-		task.Title, task.Description, task.Status, task.DueDate, task.UpdatedAt, task.ID,
+	result, err := r.db.Exec(ctx, queryUpdateTask,
+		task.Title,
+		task.Description,
+		task.Status,
+		task.DueDate,
+		task.UpdatedAt,
+		task.ID,
 	)
 
 	if err != nil {
-		return err
+		return mapTaskDBError(err)
 	}
 
 	if result.RowsAffected() == 0 {
@@ -84,12 +73,11 @@ func (r *TaskRepository) Update(ctx context.Context, task *domain.Task) error {
 	return nil
 }
 
+// Delete elimina una tarea por su ID
 func (r *TaskRepository) Delete(ctx context.Context, id string) error {
-	query := `DELETE FROM tasks WHERE id = $1`
-
-	result, err := r.db.Exec(ctx, query, id)
+	result, err := r.db.Exec(ctx, queryDeleteTask, id)
 	if err != nil {
-		return err
+		return mapTaskDBError(err)
 	}
 
 	if result.RowsAffected() == 0 {
@@ -99,94 +87,57 @@ func (r *TaskRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// ListByAssignee obtiene todas las tareas asignadas a un usuario
 func (r *TaskRepository) ListByAssignee(ctx context.Context, userID string) ([]*domain.Task, error) {
-	query := `
-		SELECT id, title, description, status, due_date, assigned_to, created_by, created_at, updated_at
-		FROM tasks
-		WHERE assigned_to = $1
-		ORDER BY due_date ASC
-	`
-
-	return r.queryTasks(ctx, query, userID)
-}
-
-func (r *TaskRepository) ListAll(ctx context.Context) ([]*domain.Task, error) {
-	query := `
-		SELECT id, title, description, status, due_date, assigned_to, created_by, created_at, updated_at
-		FROM tasks
-		ORDER BY created_at DESC
-	`
-
-	return r.queryTasks(ctx, query)
-}
-
-func (r *TaskRepository) AddComment(ctx context.Context, comment *domain.Comment) error {
-	query := `
-		INSERT INTO comments (id, task_id, user_id, content, created_at)
-		VALUES ($1, $2, $3, $4, $5)
-	`
-
-	_, err := r.db.Exec(ctx, query,
-		comment.ID, comment.TaskID, comment.UserID, comment.Content, comment.CreatedAt,
-	)
-
-	return err
-}
-
-func (r *TaskRepository) queryTasks(ctx context.Context, query string, args ...interface{}) ([]*domain.Task, error) {
-	rows, err := r.db.Query(ctx, query, args...)
+	rows, err := r.db.Query(ctx, queryListTasksByAssignee, userID)
 	if err != nil {
-		return nil, err
+		return nil, mapTaskDBError(err)
 	}
 	defer rows.Close()
 
-	var tasks []*domain.Task
-	for rows.Next() {
-		var task domain.Task
-		err := rows.Scan(
-			&task.ID, &task.Title, &task.Description, &task.Status,
-			&task.DueDate, &task.AssignedTo, &task.CreatedBy, &task.CreatedAt, &task.UpdatedAt,
-		)
-		if err != nil {
-			return nil, err
-		}
+	tasks, err := scanTasks(rows)
+	if err != nil {
+		return nil, err
+	}
 
-		// Cargar comentarios para cada tarea
-		comments, err := r.getCommentsByTaskID(ctx, task.ID)
-		if err != nil {
-			return nil, err
-		}
-		task.Comments = comments
-
-		tasks = append(tasks, &task)
+	// Cargar comentarios para todas las tareas
+	if err := loadTasksComments(ctx, r.db, tasks); err != nil {
+		return nil, err
 	}
 
 	return tasks, nil
 }
 
-func (r *TaskRepository) getCommentsByTaskID(ctx context.Context, taskID string) ([]domain.Comment, error) {
-	query := `
-		SELECT id, task_id, user_id, content, created_at
-		FROM comments
-		WHERE task_id = $1
-		ORDER BY created_at ASC
-	`
-
-	rows, err := r.db.Query(ctx, query, taskID)
+// ListAll obtiene todas las tareas ordenadas por fecha de creación
+func (r *TaskRepository) ListAll(ctx context.Context) ([]*domain.Task, error) {
+	rows, err := r.db.Query(ctx, queryListAllTasks)
 	if err != nil {
-		return nil, err
+		return nil, mapTaskDBError(err)
 	}
 	defer rows.Close()
 
-	var comments []domain.Comment
-	for rows.Next() {
-		var comment domain.Comment
-		err := rows.Scan(&comment.ID, &comment.TaskID, &comment.UserID, &comment.Content, &comment.CreatedAt)
-		if err != nil {
-			return nil, err
-		}
-		comments = append(comments, comment)
+	tasks, err := scanTasks(rows)
+	if err != nil {
+		return nil, err
 	}
 
-	return comments, nil
+	// Cargar comentarios para todas las tareas
+	if err := loadTasksComments(ctx, r.db, tasks); err != nil {
+		return nil, err
+	}
+
+	return tasks, nil
+}
+
+// AddComment agrega un comentario a una tarea
+func (r *TaskRepository) AddComment(ctx context.Context, comment *domain.Comment) error {
+	_, err := r.db.Exec(ctx, queryInsertComment,
+		comment.ID,
+		comment.TaskID,
+		comment.UserID,
+		comment.Content,
+		comment.CreatedAt,
+	)
+
+	return mapTaskDBError(err)
 }
