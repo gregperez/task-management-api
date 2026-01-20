@@ -1,13 +1,11 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"gregperez/task-management-api/internal/domain"
-	"gregperez/task-management-api/internal/middleware"
+	"gregperez/task-management-api/internal/handler/request"
 	"gregperez/task-management-api/internal/service"
-	"gregperez/task-management-api/pkg/helper"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -20,129 +18,191 @@ func NewTaskHandler(taskService *service.TaskService) *TaskHandler {
 	return &TaskHandler{taskService: taskService}
 }
 
+// CreateTask crea una nueva tarea (solo Admin)
 func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value(middleware.UserIDKey).(string)
-	userRole := r.Context().Value(middleware.UserRoleKey).(domain.UserRole)
-
-	var req service.CreateTaskRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "entrada inválida")
-		return
-	}
-
-	task, err := h.taskService.CreateTask(r.Context(), req, userID, userRole)
+	ctx := r.Context()
+	userID, userRole, err := GetUserContext(ctx)
 	if err != nil {
-		helper.RespondError(w, http.StatusBadRequest, err.Error())
+		RespondWithError(w, err)
 		return
 	}
 
-	helper.RespondJSON(w, http.StatusCreated, task)
+	var req request.CreateTaskRequest
+	if err := DecodeJSON(r, &req); err != nil {
+		RespondWithError(w, err)
+		return
+	}
+
+	// Convertir request DTO a service request
+	serviceReq := service.CreateTaskRequest{
+		Title:       req.Title,
+		Description: req.Description,
+		DueDate:     req.DueDate,
+		AssignedTo:  req.AssignedTo,
+	}
+
+	task, err := h.taskService.CreateTask(ctx, serviceReq, userID, userRole)
+	if err != nil {
+		RespondWithError(w, err)
+		return
+	}
+
+	RespondWithData(w, http.StatusCreated, task)
 }
 
+// GetTask obtiene una tarea por ID
 func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	taskID := chi.URLParam(r, "id")
-	userID := r.Context().Value(middleware.UserIDKey).(string)
-	userRole := r.Context().Value(middleware.UserRoleKey).(domain.UserRole)
-
-	task, err := h.taskService.GetTask(r.Context(), taskID, userID, userRole)
+	userID, userRole, err := GetUserContext(ctx)
 	if err != nil {
-		helper.RespondError(w, http.StatusNotFound, err.Error())
+		RespondWithError(w, err)
 		return
 	}
 
-	helper.RespondJSON(w, http.StatusOK, task)
+	task, err := h.taskService.GetTask(ctx, taskID, userID, userRole)
+	if err != nil {
+		RespondWithError(w, err)
+		return
+	}
+
+	RespondWithData(w, http.StatusOK, task)
 }
 
+// UpdateTask actualiza una tarea existente (solo Admin)
 func (h *TaskHandler) UpdateTask(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	taskID := chi.URLParam(r, "id")
-	userRole := r.Context().Value(middleware.UserRoleKey).(domain.UserRole)
-
-	var req service.UpdateTaskRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "entrada inválida")
+	userRole, err := GetUserRole(ctx)
+	if err != nil {
+		RespondWithError(w, err)
 		return
 	}
 
-	if err := h.taskService.UpdateTask(r.Context(), taskID, req, userRole); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, err.Error())
+	var req request.UpdateTaskRequest
+	if err := DecodeJSON(r, &req); err != nil {
+		RespondWithError(w, err)
 		return
 	}
 
-	helper.RespondJSON(w, http.StatusOK, map[string]string{"message": "tarea actualizada"})
+	// Convertir request DTO a service request
+	serviceReq := service.UpdateTaskRequest{
+		Title:       req.Title,
+		Description: req.Description,
+		DueDate:     req.DueDate,
+	}
+
+	if err := h.taskService.UpdateTask(ctx, taskID, serviceReq, userRole); err != nil {
+		RespondWithError(w, err)
+		return
+	}
+
+	RespondWithMessage(w, http.StatusOK, "tarea actualizada")
 }
 
+// DeleteTask elimina una tarea (solo Admin)
 func (h *TaskHandler) DeleteTask(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	taskID := chi.URLParam(r, "id")
-	userRole := r.Context().Value(middleware.UserRoleKey).(domain.UserRole)
-
-	if err := h.taskService.DeleteTask(r.Context(), taskID, userRole); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, err.Error())
+	userRole, err := GetUserRole(ctx)
+	if err != nil {
+		RespondWithError(w, err)
 		return
 	}
 
-	helper.RespondJSON(w, http.StatusOK, map[string]string{"message": "tarea eliminada"})
+	if err := h.taskService.DeleteTask(ctx, taskID, userRole); err != nil {
+		RespondWithError(w, err)
+		return
+	}
+
+	RespondWithMessage(w, http.StatusOK, "tarea eliminada")
 }
 
+// UpdateTaskStatus actualiza el estado de una tarea (Ejecutor)
 func (h *TaskHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	taskID := chi.URLParam(r, "id")
-	userID := r.Context().Value(middleware.UserIDKey).(string)
-	userRole := r.Context().Value(middleware.UserRoleKey).(domain.UserRole)
-
-	var req service.UpdateTaskStatusRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "entrada inválida")
+	userID, userRole, err := GetUserContext(ctx)
+	if err != nil {
+		RespondWithError(w, err)
 		return
 	}
 
-	if err := h.taskService.UpdateTaskStatus(r.Context(), taskID, req, userID, userRole); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, err.Error())
+	var req request.UpdateTaskStatusRequest
+	if err := DecodeJSON(r, &req); err != nil {
+		RespondWithError(w, err)
 		return
 	}
 
-	helper.RespondJSON(w, http.StatusOK, map[string]string{"message": "estado actualizado"})
+	// Convertir request DTO a service request
+	serviceReq := service.UpdateTaskStatusRequest{
+		Status: domain.TaskStatus(req.Status),
+	}
+
+	if err := h.taskService.UpdateTaskStatus(ctx, taskID, serviceReq, userID, userRole); err != nil {
+		RespondWithError(w, err)
+		return
+	}
+
+	RespondWithMessage(w, http.StatusOK, "estado actualizado")
 }
 
+// AddComment agrega un comentario a una tarea (Ejecutor)
 func (h *TaskHandler) AddComment(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	taskID := chi.URLParam(r, "id")
-	userID := r.Context().Value(middleware.UserIDKey).(string)
-	userRole := r.Context().Value(middleware.UserRoleKey).(domain.UserRole)
-
-	var req struct {
-		Content string `json:"content"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, "entrada inválida")
+	userID, userRole, err := GetUserContext(ctx)
+	if err != nil {
+		RespondWithError(w, err)
 		return
 	}
 
-	if err := h.taskService.AddComment(r.Context(), taskID, req.Content, userID, userRole); err != nil {
-		helper.RespondError(w, http.StatusBadRequest, err.Error())
+	var req request.AddCommentRequest
+	if err := DecodeJSON(r, &req); err != nil {
+		RespondWithError(w, err)
 		return
 	}
 
-	helper.RespondJSON(w, http.StatusCreated, map[string]string{"message": "comentario agregado"})
+	if err := h.taskService.AddComment(ctx, taskID, req.Content, userID, userRole); err != nil {
+		RespondWithError(w, err)
+		return
+	}
+
+	RespondWithMessage(w, http.StatusCreated, "comentario agregado")
 }
 
+// ListMyTasks lista las tareas del usuario autenticado (Ejecutor)
 func (h *TaskHandler) ListMyTasks(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value(middleware.UserIDKey).(string)
-
-	tasks, err := h.taskService.ListUserTasks(r.Context(), userID)
+	ctx := r.Context()
+	userID, err := GetUserID(ctx)
 	if err != nil {
-		helper.RespondError(w, http.StatusInternalServerError, err.Error())
+		RespondWithError(w, err)
 		return
 	}
 
-	helper.RespondJSON(w, http.StatusOK, tasks)
+	tasks, err := h.taskService.ListUserTasks(ctx, userID)
+	if err != nil {
+		RespondWithError(w, err)
+		return
+	}
+
+	RespondWithData(w, http.StatusOK, tasks)
 }
 
+// ListAllTasks lista todas las tareas (Auditor)
 func (h *TaskHandler) ListAllTasks(w http.ResponseWriter, r *http.Request) {
-	userRole := r.Context().Value(middleware.UserRoleKey).(domain.UserRole)
-
-	tasks, err := h.taskService.ListAllTasks(r.Context(), userRole)
+	ctx := r.Context()
+	userRole, err := GetUserRole(ctx)
 	if err != nil {
-		helper.RespondError(w, http.StatusForbidden, err.Error())
+		RespondWithError(w, err)
 		return
 	}
 
-	helper.RespondJSON(w, http.StatusOK, tasks)
+	tasks, err := h.taskService.ListAllTasks(ctx, userRole)
+	if err != nil {
+		RespondWithError(w, err)
+		return
+	}
+
+	RespondWithData(w, http.StatusOK, tasks)
 }

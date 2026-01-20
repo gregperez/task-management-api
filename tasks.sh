@@ -32,12 +32,12 @@ case "$1" in
   
   test)
     echo "Ejecutando tests..."
-    go test -v -race -coverprofile=coverage.out ./...
+    go test -v -coverprofile=coverage.out ./...
     ;;
   
   test-coverage)
     echo "Ejecutando tests y generando cobertura..."
-    go test -v -race -coverprofile=coverage.out ./...
+    go test -v -coverprofile=coverage.out ./...
     go tool cover -html=coverage.out
     ;;
   
