@@ -5,6 +5,7 @@ import (
 
 	"gregperez/task-management-api/internal/handler/request"
 	"gregperez/task-management-api/internal/service"
+	"gregperez/task-management-api/internal/service/dto"
 )
 
 type AuthHandler struct {
@@ -26,7 +27,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convertir request DTO a service request
-	serviceReq := service.LoginRequest{
+	serviceReq := dto.LoginRequest{
 		Username: req.Username,
 		Password: req.Password,
 	}
@@ -56,7 +57,7 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convertir request DTO a service request
-	serviceReq := service.ChangePasswordRequest{
+	serviceReq := dto.ChangePasswordRequest{
 		CurrentPassword: req.OldPassword,
 		NewPassword:     req.NewPassword,
 	}

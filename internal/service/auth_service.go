@@ -6,7 +6,7 @@ import (
 
 	"gregperez/task-management-api/internal/domain"
 	"gregperez/task-management-api/internal/repository"
-	"gregperez/task-management-api/pkg/jwt"
+	"gregperez/task-management-api/internal/service/dto"
 	"gregperez/task-management-api/pkg/password"
 )
 
@@ -24,66 +24,43 @@ func NewAuthService(userRepo repository.UserRepository, jwtSecret string, tokenE
 	}
 }
 
-type LoginRequest struct {
-	Username string `json:"username" validate:"required"`
-	Password string `json:"password" validate:"required"`
-}
-
-type LoginResponse struct {
-	Token              string       `json:"token"`
-	User               *domain.User `json:"user"`
-	MustChangePassword bool         `json:"must_change_password"`
-}
-
-func (s *AuthService) Login(ctx context.Context, req LoginRequest) (*LoginResponse, error) {
+// Login autentica un usuario y retorna un token JWT.
+func (s *AuthService) Login(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error) {
 	user, err := s.userRepo.GetByUsername(ctx, req.Username)
 	if err != nil {
 		return nil, domain.ErrInvalidCredentials
 	}
 
-	// Verificar contraseña
-	if !password.CheckPassword(req.Password, user.Password) {
-		return nil, domain.ErrInvalidCredentials
+	if err := validateCredentials(req.Password, user.Password); err != nil {
+		return nil, err
 	}
 
-	// Generar token JWT
-	token, err := jwt.GenerateToken(user.ID, string(user.Role), s.jwtSecret, s.tokenExpiry)
+	token, err := generateAuthToken(user.ID, user.Role, s.jwtSecret, s.tokenExpiry)
 	if err != nil {
 		return nil, err
 	}
 
-	return &LoginResponse{
-		Token:              token,
-		User:               user,
-		MustChangePassword: user.MustChangePassword(),
-	}, nil
+	return buildLoginResponse(user, token), nil
 }
 
-type ChangePasswordRequest struct {
-	CurrentPassword string `json:"current_password" validate:"required"`
-	NewPassword     string `json:"new_password" validate:"required,min=8"`
-}
-
-func (s *AuthService) ChangePassword(ctx context.Context, userID string, req ChangePasswordRequest) error {
+// ChangePassword cambia la contraseña de un usuario.
+// Valida la contraseña actual antes de permitir el cambio.
+func (s *AuthService) ChangePassword(ctx context.Context, userID string, req dto.ChangePasswordRequest) error {
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return err
 	}
 
-	// Verificar contraseña actual
-	if !password.CheckPassword(req.CurrentPassword, user.Password) {
-		return domain.ErrInvalidCredentials
+	if err := validateCredentials(req.CurrentPassword, user.Password); err != nil {
+		return err
 	}
 
-	// Hash nueva contraseña
 	hashedPassword, err := password.HashPassword(req.NewPassword)
 	if err != nil {
 		return err
 	}
 
-	user.Password = hashedPassword
-	user.IsTemporaryPassword = false
-	user.UpdatedAt = time.Now()
+	updatePasswordFields(user, hashedPassword)
 
 	return s.userRepo.Update(ctx, user)
 }
