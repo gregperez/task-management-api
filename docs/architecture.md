@@ -312,4 +312,4 @@ func (t *Task) CanTransitionTo(newStatus TaskStatus) error {
 
 ---
 
-**Última actualización**: 2026-01-20
+**Última actualización**: 2026-01-21
