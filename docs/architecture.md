@@ -292,7 +292,7 @@ func (t *Task) CanTransitionTo(newStatus TaskStatus) error {
 
 ## Métricas de Calidad
 
-- **Cobertura de Tests**: > 70% en servicios críticos
+- **Cobertura de Tests**: > 80% en servicios críticos
 - **Separación de Capas**: 4 capas claramente definidas
 - **Tamaño de Handlers**: < 100 líneas promedio
 - **Tamaño de Servicios**: Separados por responsabilidad (validation, authorization, builder)

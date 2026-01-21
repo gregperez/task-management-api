@@ -9,10 +9,10 @@ import (
 )
 
 type AuthHandler struct {
-	authService *service.AuthService
+	authService service.AuthServiceInterface
 }
 
-func NewAuthHandler(authService *service.AuthService) *AuthHandler {
+func NewAuthHandler(authService service.AuthServiceInterface) *AuthHandler {
 	return &AuthHandler{authService: authService}
 }
 
@@ -58,7 +58,7 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	// Convertir request DTO a service request
 	serviceReq := dto.ChangePasswordRequest{
-		CurrentPassword: req.OldPassword,
+		CurrentPassword: req.CurrentPassword,
 		NewPassword:     req.NewPassword,
 	}
 

@@ -21,10 +21,10 @@ func TestConfig_Load(t *testing.T) {
 	}
 }
 
-func TestConfig_GetEnvNonExistent(t *testing.T) {
-	defaultValue := "default"
-	value := getEnv("NON_EXISTENT_ENV_VAR", defaultValue)
-	if value != defaultValue {
-		t.Errorf("Expected default value %s, got %s", defaultValue, value)
+func TestConfig_GetEnvTestVar(t *testing.T) {
+	t.Setenv("TEST_VAR", "test_value")
+	value := getEnv("TEST_VAR", "default_value")
+	if value != "test_value" {
+		t.Errorf("Expected value test_value, got %s", value)
 	}
 }
