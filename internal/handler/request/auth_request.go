@@ -10,6 +10,6 @@ type LoginRequest struct {
 
 // ChangePasswordRequest representa la solicitud para cambiar contraseña
 type ChangePasswordRequest struct {
-	OldPassword string `json:"old_password"`
-	NewPassword string `json:"new_password"`
+	CurrentPassword string `json:"current_password"`
+	NewPassword 	string `json:"new_password"`
 }

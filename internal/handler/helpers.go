@@ -71,7 +71,7 @@ func MapErrorToStatus(err error) int {
 	switch {
 	case errors.Is(err, domain.ErrUserNotFound):
 		return http.StatusNotFound
-	case errors.Is(err, domain.ErrUnauthorized):
+	case errors.Is(err, domain.ErrUnauthorized), errors.Is(err, domain.ErrInvalidCredentials):
 		return http.StatusUnauthorized
 	case errors.Is(err, domain.ErrForbidden):
 		return http.StatusForbidden
